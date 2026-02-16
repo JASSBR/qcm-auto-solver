@@ -63,6 +63,11 @@
 
     const currentHash = hashContent();
     if (currentHash === lastContentHash) return;
+
+    // Content changed — clear old solved questions (page reloaded/new quiz)
+    if (lastContentHash !== "") {
+      solvedQuestions.clear();
+    }
     lastContentHash = currentHash;
 
     const questions = detectQuestions();
@@ -580,12 +585,11 @@
     // 4. Click the container/label (visual click)
     const clickTarget = label || container;
     simulateClick(clickTarget);
-    await sleep(rand(20, 60));
+    await sleep(rand(50, 120));
 
-    // 5. Framework-compatible state change if click didn't toggle
-    if (!inputEl.checked) {
-      triggerFrameworkChange(inputEl, true);
-    }
+    // 5. ALWAYS force framework change — Vue's v-model might not react
+    //    to untrusted label clicks, so we set it explicitly
+    triggerFrameworkChange(inputEl, true);
   }
 
   // Full human interaction for clickable divs/buttons
