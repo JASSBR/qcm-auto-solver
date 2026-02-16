@@ -173,10 +173,12 @@
           "[class*='choice']",
           "button[class*='option']",
           "li[class*='option']",
-          // DaisyUI
+          // DaisyUI / Tailwind button patterns
           ".btn-group > button",
           ".join > button",
           ".menu > li",
+          "button.btn",
+          ".btn.btn-outline",
         ].join(", ")
       );
 
@@ -475,7 +477,7 @@
   function findOptionContainer(el) {
     return (
       el.closest(
-        ".option, [class*='option'], [class*='choice'], [class*='answer'], [role='option'], [role='radio'], .label, .form-control"
+        ".option, [class*='option'], [class*='choice'], [class*='answer'], [role='option'], [role='radio'], .label, .form-control, .btn"
       ) || el.parentElement
     );
   }
@@ -621,6 +623,40 @@
     } catch (e) {}
   }
 
+  // Re-query a fresh element from the DOM after Vue re-renders
+  // Vue's reactivity can replace DOM nodes after state changes
+  function refetchElement(question, optIndex) {
+    if (question.type === "radio") {
+      // Re-query radio by name + value
+      const name = question.elements[0]?.name;
+      if (name) {
+        const radios = document.querySelectorAll(`input[type="radio"][name="${name}"]`);
+        return radios[optIndex] || null;
+      }
+    } else if (question.type === "checkbox") {
+      // Re-query checkboxes within the same container
+      const container = question.elements[0]?.closest(
+        ".card, .form-control, fieldset, form, [class*='question']"
+      );
+      if (container) {
+        const checkboxes = container.querySelectorAll('input[type="checkbox"]');
+        return checkboxes[optIndex] || null;
+      }
+    } else if (question.type === "click") {
+      // Re-query buttons within the same container
+      const container = question.elements[0]?.closest(
+        ".card, .card-body, [class*='question']"
+      );
+      if (container) {
+        const buttons = container.querySelectorAll(
+          "button.btn, [role='option'], [class*='option'], [class*='choice']"
+        );
+        return buttons[optIndex] || null;
+      }
+    }
+    return null;
+  }
+
   // Apply all answers with human pacing
   async function applyAnswersHuman(questions, aiAnswers) {
     for (let a = 0; a < aiAnswers.length; a++) {
@@ -638,15 +674,21 @@
 
       for (let s = 0; s < selectedIndices.length; s++) {
         const optIndex = selectedIndices[s];
-        const option = question.options[optIndex];
-        if (!option) continue;
+
+        // Always try to get a fresh DOM element (Vue may have re-rendered)
+        let el = question.options[optIndex]?.element;
+        if (!el || !el.isConnected) {
+          el = refetchElement(question, optIndex);
+        }
+        if (!el) continue;
 
         if (question.type === "radio" || question.type === "checkbox") {
-          await humanInteract(option.element);
+          await humanInteract(el);
         } else if (question.type === "click") {
-          await humanClickElement(option.element);
+          await humanClickElement(el);
         }
 
+        // Wait for Vue to re-render before next selection
         if (selectedIndices.length > 1 && s < selectedIndices.length - 1) {
           await sleep(rand(400, 1000));
         }
