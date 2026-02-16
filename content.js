@@ -1,4 +1,4 @@
-// content.js — QCM solver with React/Next.js support + human simulation
+// content.js — QCM solver with Vue.js/Inertia.js + React support + human simulation
 
 (() => {
   let config = { enabled: false, provider: "anthropic", apiKey: "", model: "" };
@@ -138,7 +138,7 @@
       if (q) questions.push(q);
     });
 
-    // Strategy 3: Clickable divs/buttons (React apps often use these)
+    // Strategy 3: Clickable divs/buttons (Vue/React apps)
     const questionBlocks = document.querySelectorAll(
       [
         ".question",
@@ -150,10 +150,13 @@
         "[role='radiogroup']",
         "[role='group']",
         "[role='listbox']",
-        // Common React/MUI/Tailwind patterns
+        // DaisyUI / Tailwind patterns
+        ".form-control",
+        ".card",
+        "[class*='FormControl']",
+        // React patterns
         "[class*='MuiRadioGroup']",
         "[class*='RadioGroup']",
-        "[class*='formControl']",
       ].join(", ")
     );
 
@@ -170,9 +173,10 @@
           "[class*='choice']",
           "button[class*='option']",
           "li[class*='option']",
-          // MUI / Headless UI patterns
-          "[class*='MuiRadio']",
-          "[class*='listbox-option']",
+          // DaisyUI
+          ".btn-group > button",
+          ".join > button",
+          ".menu > li",
         ].join(", ")
       );
 
@@ -202,7 +206,7 @@
   function extractQuestionFromInputs(inputs, type) {
     const container =
       inputs[0].closest(
-        "form, .question, .quiz-question, [class*='question'], fieldset, .card, .panel, .form-group, div"
+        "form, .question, .quiz-question, [class*='question'], fieldset, .card, .panel, .form-group, .form-control, div"
       ) || inputs[0].parentElement?.parentElement;
 
     if (!container) return null;
@@ -271,27 +275,47 @@
   }
 
   // =================================================================
-  //  REACT-COMPATIBLE INPUT TRIGGERING
+  //  FRAMEWORK-COMPATIBLE INPUT TRIGGERING (Vue.js + React)
   // =================================================================
 
-  // React attaches internal fiber/props on DOM elements with keys like
-  // __reactFiber$xxx, __reactProps$xxx, __reactEvents$xxx
-  // We need to find and call React's onChange handler directly
-
-  function getReactFiberKey(el) {
-    return Object.keys(el).find((k) => k.startsWith("__reactFiber$"));
+  // Detect which framework is used
+  function detectFramework() {
+    // Vue 3: app root has __vue_app__
+    if (document.querySelector("[data-page]")) return "vue-inertia";
+    if (document.querySelector("#app")?.__vue_app__) return "vue";
+    const anyEl = document.querySelector("[class]");
+    if (anyEl) {
+      const keys = Object.keys(anyEl);
+      if (keys.some((k) => k.startsWith("__vueParentComponent"))) return "vue";
+      if (keys.some((k) => k.startsWith("__reactFiber$"))) return "react";
+    }
+    return "unknown";
   }
 
-  function getReactPropsKey(el) {
-    return Object.keys(el).find(
-      (k) => k.startsWith("__reactProps$") || k.startsWith("__reactEvents$")
+  // ---- Vue.js specific ----
+
+  // Vue 3 stores event handlers in el._vei (Vue Event Invokers)
+  // Each key is the event name, value is an invoker function with .value = actual handler
+  function getVueEventInvoker(el, eventName) {
+    if (!el._vei) return null;
+    // Vue normalizes event names: "onChange" -> stored as "Change" or "change"
+    const key = `on${eventName.charAt(0).toUpperCase()}${eventName.slice(1)}`;
+    return el._vei[key] || el._vei[eventName] || null;
+  }
+
+  // Get Vue component instance from a DOM element
+  function getVueInstance(el) {
+    // Vue 3: __vueParentComponent
+    const key = Object.keys(el).find(
+      (k) =>
+        k.startsWith("__vueParentComponent") || k.startsWith("__vue_")
     );
+    return key ? el[key] : null;
   }
 
-  // Trigger React-compatible change on an input element
-  function triggerReactChange(inputEl, checked) {
-    // Method 1: Use native setter + input event (works for React 16-19)
-    // React listens for 'input' events on inputs, not 'change'
+  // Trigger Vue-compatible change on an input
+  // Vue's v-model for radio/checkbox listens on 'change' event
+  function triggerVueChange(inputEl, checked) {
     const nativeSetter = getNativeCheckedSetter();
     if (nativeSetter) {
       nativeSetter.call(inputEl, checked);
@@ -299,13 +323,44 @@
       inputEl.checked = checked;
     }
 
-    // Dispatch 'input' event — React's onChange is wired to this
-    inputEl.dispatchEvent(new Event("input", { bubbles: true }));
-
-    // Also dispatch 'change' for non-React listeners
+    // Vue v-model listens for 'change' on radios/checkboxes
     inputEl.dispatchEvent(new Event("change", { bubbles: true }));
 
-    // Dispatch 'click' event on the input — React also listens for this on radios/checkboxes
+    // Also dispatch 'input' as fallback
+    inputEl.dispatchEvent(new Event("input", { bubbles: true }));
+
+    // Try calling Vue's event invoker directly
+    try {
+      const invoker = getVueEventInvoker(inputEl, "change");
+      if (invoker) {
+        const fakeEvent = new Event("change", { bubbles: true });
+        Object.defineProperty(fakeEvent, "target", { value: inputEl });
+        invoker(fakeEvent);
+      }
+    } catch (e) {}
+  }
+
+  // ---- React specific ----
+
+  function getReactPropsKey(el) {
+    return Object.keys(el).find(
+      (k) => k.startsWith("__reactProps$") || k.startsWith("__reactEvents$")
+    );
+  }
+
+  function triggerReactChange(inputEl, checked) {
+    const nativeSetter = getNativeCheckedSetter();
+    if (nativeSetter) {
+      nativeSetter.call(inputEl, checked);
+    } else {
+      inputEl.checked = checked;
+    }
+
+    // React listens for 'input' events on inputs for onChange
+    inputEl.dispatchEvent(new Event("input", { bubbles: true }));
+    inputEl.dispatchEvent(new Event("change", { bubbles: true }));
+
+    // Dispatch click event on the input
     const pos = getCenter(inputEl);
     inputEl.dispatchEvent(
       new MouseEvent("click", {
@@ -319,7 +374,7 @@
       })
     );
 
-    // Method 2: Try calling React's onChange directly via fiber props
+    // Try React fiber props
     try {
       const propsKey = getReactPropsKey(inputEl);
       if (propsKey && inputEl[propsKey]) {
@@ -335,26 +390,55 @@
             nativeEvent: new Event("change"),
           });
         }
-        if (typeof props.onClick === "function") {
-          props.onClick({
-            target: inputEl,
-            currentTarget: inputEl,
-            type: "click",
-            bubbles: true,
-            preventDefault: () => {},
-            stopPropagation: () => {},
-            nativeEvent: new Event("click"),
-          });
-        }
       }
     } catch (e) {}
   }
 
-  // Get the native setter — first try window.__nativeSetters from inject.js,
-  // then fall back to grabbing it from the prototype
+  // ---- Framework-agnostic trigger ----
+
+  function triggerFrameworkChange(inputEl, checked) {
+    const fw = detectFramework();
+
+    if (fw === "vue" || fw === "vue-inertia") {
+      triggerVueChange(inputEl, checked);
+    } else if (fw === "react") {
+      triggerReactChange(inputEl, checked);
+    } else {
+      // Generic: try all approaches
+      const nativeSetter = getNativeCheckedSetter();
+      if (nativeSetter) {
+        nativeSetter.call(inputEl, checked);
+      } else {
+        inputEl.checked = checked;
+      }
+      inputEl.dispatchEvent(new Event("change", { bubbles: true }));
+      inputEl.dispatchEvent(new Event("input", { bubbles: true }));
+
+      // Try Vue
+      try {
+        const invoker = getVueEventInvoker(inputEl, "change");
+        if (invoker) invoker(new Event("change", { bubbles: true }));
+      } catch (e) {}
+
+      // Try React
+      try {
+        const propsKey = getReactPropsKey(inputEl);
+        if (propsKey && inputEl[propsKey]?.onChange) {
+          inputEl[propsKey].onChange({
+            target: inputEl,
+            currentTarget: inputEl,
+            type: "change",
+            bubbles: true,
+            preventDefault: () => {},
+            stopPropagation: () => {},
+            nativeEvent: new Event("change"),
+          });
+        }
+      } catch (e) {}
+    }
+  }
+
   function getNativeCheckedSetter() {
-    // inject.js exposes this in MAIN world, but we're in ISOLATED world
-    // so we grab it directly from the prototype (which inject.js locked)
     try {
       const desc = Object.getOwnPropertyDescriptor(
         HTMLInputElement.prototype,
@@ -391,7 +475,7 @@
   function findOptionContainer(el) {
     return (
       el.closest(
-        ".option, [class*='option'], [class*='choice'], [class*='answer'], [role='option'], [role='radio']"
+        ".option, [class*='option'], [class*='choice'], [class*='answer'], [role='option'], [role='radio'], .label, .form-control"
       ) || el.parentElement
     );
   }
@@ -496,14 +580,13 @@
     simulateClick(clickTarget);
     await sleep(rand(20, 60));
 
-    // 5. React-compatible state change
-    // Check if the click already toggled it (happens on native HTML pages)
+    // 5. Framework-compatible state change if click didn't toggle
     if (!inputEl.checked) {
-      triggerReactChange(inputEl, true);
+      triggerFrameworkChange(inputEl, true);
     }
   }
 
-  // Full human interaction for clickable divs/buttons (React components)
+  // Full human interaction for clickable divs/buttons
   async function humanClickElement(el) {
     const container = findOptionContainer(el);
 
@@ -513,7 +596,15 @@
     await sleep(rand(80, 200));
     simulateClick(el);
 
-    // Also try triggering React onClick directly
+    // Try Vue event invoker
+    try {
+      const invoker = getVueEventInvoker(el, "click");
+      if (invoker) {
+        invoker(new MouseEvent("click", { bubbles: true }));
+      }
+    } catch (e) {}
+
+    // Try React props
     try {
       const propsKey = getReactPropsKey(el);
       if (propsKey && el[propsKey]?.onClick) {
