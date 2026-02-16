@@ -1,5 +1,5 @@
 // inject.js — MAIN world, runs BEFORE any page/framework scripts
-// Handles: isTrusted spoofing, React compatibility, anti-fingerprinting
+// Handles: isTrusted spoofing, anti-fingerprinting, and DOM interaction bridge
 
 (() => {
   // ---- 1. Wrap addEventListener: every handler sees isTrusted = true ----
@@ -26,7 +26,6 @@
     return origAdd.call(this, type, wrapped, options);
   };
 
-  // Preserve native toString to avoid detection
   EventTarget.prototype.addEventListener.toString = () =>
     "function addEventListener() { [native code] }";
 
@@ -48,40 +47,25 @@
     });
   } catch (e) {}
 
-  // ---- 3. Lock native setters (checked, value) ----
-  // Save references so content.js can use them via window.__nativeSetters
+  // ---- 3. Save & lock native setters ----
+  const nativeCheckedSet = Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype,
+    "checked"
+  )?.set;
+  const nativeValueSet = Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype,
+    "value"
+  )?.set;
+
   try {
-    const checkedDesc = Object.getOwnPropertyDescriptor(
-      HTMLInputElement.prototype,
-      "checked"
-    );
-    const valueDesc = Object.getOwnPropertyDescriptor(
-      HTMLInputElement.prototype,
-      "value"
-    );
-
-    // Expose native setters for React-compatible triggering
-    window.__nativeSetters = {
-      checked: checkedDesc.set,
-      value: valueDesc.set,
-    };
-
     Object.defineProperty(HTMLInputElement.prototype, "checked", {
-      get: checkedDesc.get,
-      set: checkedDesc.set,
-      configurable: false,
-    });
-
-    Object.defineProperty(HTMLInputElement.prototype, "value", {
-      get: valueDesc.get,
-      set: valueDesc.set,
+      get: Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "checked").get,
+      set: nativeCheckedSet,
       configurable: false,
     });
   } catch (e) {}
 
-  // ---- 4. Anti-fingerprinting: hide automation signals ----
-
-  // Hide webdriver flag (Puppeteer/Selenium detection)
+  // ---- 4. Anti-fingerprinting ----
   try {
     Object.defineProperty(navigator, "webdriver", {
       get: () => false,
@@ -89,18 +73,13 @@
     });
   } catch (e) {}
 
-  // Hide chrome.runtime from page context (extension detection)
-  // Note: only in MAIN world — content script still has access
   try {
-    if (window.chrome && window.chrome.runtime && window.chrome.runtime.id) {
-      delete window.chrome.runtime.id;
-    }
+    if (window.chrome?.runtime?.id) delete window.chrome.runtime.id;
   } catch (e) {}
 
-  // ---- 5. Block page from re-defining our overrides ----
+  // ---- 5. Block page from re-defining overrides ----
   const origDefine = Object.defineProperty;
   Object.defineProperty = function (obj, prop, descriptor) {
-    // Block re-hooks on critical properties
     if (obj === HTMLInputElement.prototype && (prop === "checked" || prop === "value")) return obj;
     if (obj === EventTarget.prototype && (prop === "dispatchEvent" || prop === "addEventListener")) return obj;
     if (obj === Event.prototype && prop === "isTrusted") return obj;
@@ -109,4 +88,60 @@
   };
   Object.defineProperty.toString = () =>
     "function defineProperty() { [native code] }";
+
+  // ==================================================================
+  //  6. MAIN WORLD BRIDGE — receives commands from content.js (ISOLATED)
+  //     and performs DOM interaction in the MAIN world where Vue/React live
+  // ==================================================================
+
+  window.addEventListener("message", (e) => {
+    if (e.source !== window) return;
+    if (!e.data || e.data.__qcm !== true) return;
+
+    const { action, selector, clickSelector } = e.data;
+
+    if (action === "check") {
+      // Set checked + dispatch change/input in MAIN world
+      const el = document.querySelector(selector);
+      if (!el) return;
+
+      if (nativeCheckedSet) {
+        nativeCheckedSet.call(el, true);
+      } else {
+        el.checked = true;
+      }
+
+      // Dispatch events in MAIN world — Vue's v-model WILL react to these
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+
+      // Also try Vue's _vei direct invoker (only accessible from MAIN world)
+      try {
+        if (el._vei) {
+          const invoker = el._vei.onChange || el._vei.onchange;
+          if (invoker) {
+            const evt = new Event("change", { bubbles: true });
+            Object.defineProperty(evt, "target", { value: el, writable: false });
+            invoker(evt);
+          }
+        }
+      } catch (err) {}
+    }
+
+    if (action === "click") {
+      // Click an element (button, div) in MAIN world
+      const el = document.querySelector(clickSelector || selector);
+      if (!el) return;
+
+      el.click();
+
+      // Try Vue's _vei onClick
+      try {
+        if (el._vei) {
+          const invoker = el._vei.onClick || el._vei.onclick;
+          if (invoker) invoker(new MouseEvent("click", { bubbles: true }));
+        }
+      } catch (err) {}
+    }
+  });
 })();
