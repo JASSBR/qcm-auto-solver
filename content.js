@@ -1,4 +1,4 @@
-// content.js — Détecte les QCM et les résout avec simulation humaine réaliste
+// content.js — QCM solver with React/Next.js support + human simulation
 
 (() => {
   let config = { enabled: false, provider: "anthropic", apiKey: "", model: "" };
@@ -138,7 +138,7 @@
       if (q) questions.push(q);
     });
 
-    // Strategy 3: Clickable option divs/buttons
+    // Strategy 3: Clickable divs/buttons (React apps often use these)
     const questionBlocks = document.querySelectorAll(
       [
         ".question",
@@ -149,6 +149,11 @@
         "[data-question]",
         "[role='radiogroup']",
         "[role='group']",
+        "[role='listbox']",
+        // Common React/MUI/Tailwind patterns
+        "[class*='MuiRadioGroup']",
+        "[class*='RadioGroup']",
+        "[class*='formControl']",
       ].join(", ")
     );
 
@@ -159,11 +164,15 @@
       const options = block.querySelectorAll(
         [
           "[role='option']",
+          "[role='radio']",
           "[class*='option']",
           "[class*='answer']",
           "[class*='choice']",
           "button[class*='option']",
           "li[class*='option']",
+          // MUI / Headless UI patterns
+          "[class*='MuiRadio']",
+          "[class*='listbox-option']",
         ].join(", ")
       );
 
@@ -262,6 +271,102 @@
   }
 
   // =================================================================
+  //  REACT-COMPATIBLE INPUT TRIGGERING
+  // =================================================================
+
+  // React attaches internal fiber/props on DOM elements with keys like
+  // __reactFiber$xxx, __reactProps$xxx, __reactEvents$xxx
+  // We need to find and call React's onChange handler directly
+
+  function getReactFiberKey(el) {
+    return Object.keys(el).find((k) => k.startsWith("__reactFiber$"));
+  }
+
+  function getReactPropsKey(el) {
+    return Object.keys(el).find(
+      (k) => k.startsWith("__reactProps$") || k.startsWith("__reactEvents$")
+    );
+  }
+
+  // Trigger React-compatible change on an input element
+  function triggerReactChange(inputEl, checked) {
+    // Method 1: Use native setter + input event (works for React 16-19)
+    // React listens for 'input' events on inputs, not 'change'
+    const nativeSetter = getNativeCheckedSetter();
+    if (nativeSetter) {
+      nativeSetter.call(inputEl, checked);
+    } else {
+      inputEl.checked = checked;
+    }
+
+    // Dispatch 'input' event — React's onChange is wired to this
+    inputEl.dispatchEvent(new Event("input", { bubbles: true }));
+
+    // Also dispatch 'change' for non-React listeners
+    inputEl.dispatchEvent(new Event("change", { bubbles: true }));
+
+    // Dispatch 'click' event on the input — React also listens for this on radios/checkboxes
+    const pos = getCenter(inputEl);
+    inputEl.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+        clientX: pos.x,
+        clientY: pos.y,
+        screenX: pos.screenX,
+        screenY: pos.screenY,
+        view: window,
+      })
+    );
+
+    // Method 2: Try calling React's onChange directly via fiber props
+    try {
+      const propsKey = getReactPropsKey(inputEl);
+      if (propsKey && inputEl[propsKey]) {
+        const props = inputEl[propsKey];
+        if (typeof props.onChange === "function") {
+          props.onChange({
+            target: inputEl,
+            currentTarget: inputEl,
+            type: "change",
+            bubbles: true,
+            preventDefault: () => {},
+            stopPropagation: () => {},
+            nativeEvent: new Event("change"),
+          });
+        }
+        if (typeof props.onClick === "function") {
+          props.onClick({
+            target: inputEl,
+            currentTarget: inputEl,
+            type: "click",
+            bubbles: true,
+            preventDefault: () => {},
+            stopPropagation: () => {},
+            nativeEvent: new Event("click"),
+          });
+        }
+      }
+    } catch (e) {}
+  }
+
+  // Get the native setter — first try window.__nativeSetters from inject.js,
+  // then fall back to grabbing it from the prototype
+  function getNativeCheckedSetter() {
+    // inject.js exposes this in MAIN world, but we're in ISOLATED world
+    // so we grab it directly from the prototype (which inject.js locked)
+    try {
+      const desc = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "checked"
+      );
+      return desc?.set || null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // =================================================================
   //  HUMAN-LIKE SIMULATION
   // =================================================================
 
@@ -283,16 +388,14 @@
     };
   }
 
-  // Find the outermost interactive container (.option, [role=option], etc.)
   function findOptionContainer(el) {
     return (
       el.closest(
-        ".option, [class*='option'], [class*='choice'], [class*='answer'], [role='option']"
+        ".option, [class*='option'], [class*='choice'], [class*='answer'], [role='option'], [role='radio']"
       ) || el.parentElement
     );
   }
 
-  // Simulate smooth mouse path to an element
   async function simulateMousePath(target) {
     const end = getCenter(target);
     const steps = rand(8, 16);
@@ -301,7 +404,6 @@
 
     for (let i = 0; i <= steps; i++) {
       const t = i / steps;
-      // Bezier-like ease-in-out
       const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
       const x = startX + (end.x - startX) * ease + rand(-2, 2);
       const y = startY + (end.y - startY) * ease + rand(-1, 1);
@@ -320,7 +422,6 @@
       await sleep(rand(12, 40));
     }
 
-    // Final mousemove directly on the target element
     target.dispatchEvent(
       new MouseEvent("mousemove", {
         bubbles: true,
@@ -334,7 +435,6 @@
     );
   }
 
-  // Dispatch hover events on a specific element
   function simulateHover(el) {
     const pos = getCenter(el);
     const props = {
@@ -345,13 +445,12 @@
       screenY: pos.screenY,
       view: window,
     };
-
-    // mouseenter does NOT bubble — must dispatch directly on the target
-    el.dispatchEvent(new MouseEvent("mouseenter", { ...props, bubbles: false }));
+    el.dispatchEvent(
+      new MouseEvent("mouseenter", { ...props, bubbles: false })
+    );
     el.dispatchEvent(new MouseEvent("mouseover", { ...props, bubbles: true }));
   }
 
-  // Full click chain: mousedown → pause → mouseup → click
   function simulateClick(el) {
     const pos = getCenter(el);
     const props = {
@@ -366,26 +465,24 @@
       detail: 1,
       view: window,
     };
-
     el.dispatchEvent(new MouseEvent("mousedown", props));
     el.dispatchEvent(new MouseEvent("mouseup", { ...props, buttons: 0 }));
     el.dispatchEvent(new MouseEvent("click", { ...props, buttons: 0 }));
   }
 
-  // Complete human interaction: move → hover container → hover target → click
+  // Full human interaction for input elements (radio/checkbox)
   async function humanInteract(inputEl) {
-    // Find the visual container (.option div) that likely has hover handlers
     const container = findOptionContainer(inputEl);
 
-    // 1. Move mouse toward the container
+    // 1. Mouse path to the option
     await simulateMousePath(container);
     await sleep(rand(50, 150));
 
-    // 2. Hover the container (triggers onmouseenter on .option divs)
+    // 2. Hover the container
     simulateHover(container);
     await sleep(rand(60, 180));
 
-    // 3. Also hover the inner label/input area
+    // 3. Hover inner label
     const label =
       document.querySelector(`label[for="${inputEl.id}"]`) ||
       inputEl.closest("label");
@@ -394,20 +491,46 @@
       await sleep(rand(40, 100));
     }
 
-    // 4. Click the label (this toggles the radio/checkbox via browser activation behavior)
-    const clickTarget = label || inputEl;
+    // 4. Click the container/label (visual click)
+    const clickTarget = label || container;
     simulateClick(clickTarget);
     await sleep(rand(20, 60));
 
-    // 5. If the input still isn't checked (some browsers skip activation for
-    //    dispatched events), force it — but do NOT dispatch duplicate change events
+    // 5. React-compatible state change
+    // Check if the click already toggled it (happens on native HTML pages)
     if (!inputEl.checked) {
-      inputEl.checked = true;
-      inputEl.dispatchEvent(new Event("change", { bubbles: true }));
+      triggerReactChange(inputEl, true);
     }
   }
 
-  // Apply all answers with human-like pacing
+  // Full human interaction for clickable divs/buttons (React components)
+  async function humanClickElement(el) {
+    const container = findOptionContainer(el);
+
+    await simulateMousePath(container);
+    await sleep(rand(50, 150));
+    simulateHover(container);
+    await sleep(rand(80, 200));
+    simulateClick(el);
+
+    // Also try triggering React onClick directly
+    try {
+      const propsKey = getReactPropsKey(el);
+      if (propsKey && el[propsKey]?.onClick) {
+        el[propsKey].onClick({
+          target: el,
+          currentTarget: el,
+          type: "click",
+          bubbles: true,
+          preventDefault: () => {},
+          stopPropagation: () => {},
+          nativeEvent: new Event("click"),
+        });
+      }
+    } catch (e) {}
+  }
+
+  // Apply all answers with human pacing
   async function applyAnswersHuman(questions, aiAnswers) {
     for (let a = 0; a < aiAnswers.length; a++) {
       const answer = aiAnswers[a];
@@ -415,7 +538,7 @@
       const question = questions[qIndex];
       if (!question) continue;
 
-      // Reading delay between questions
+      // Reading delay
       await sleep(a === 0 ? rand(800, 2000) : rand(1500, 4500));
 
       const selectedIndices = answer.answers.map(
@@ -430,15 +553,9 @@
         if (question.type === "radio" || question.type === "checkbox") {
           await humanInteract(option.element);
         } else if (question.type === "click") {
-          const container = findOptionContainer(option.element);
-          await simulateMousePath(container);
-          await sleep(rand(50, 150));
-          simulateHover(container);
-          await sleep(rand(80, 200));
-          simulateClick(option.element);
+          await humanClickElement(option.element);
         }
 
-        // Delay between multiple selections (checkboxes)
         if (selectedIndices.length > 1 && s < selectedIndices.length - 1) {
           await sleep(rand(400, 1000));
         }
@@ -460,7 +577,6 @@
     return hash.toString();
   }
 
-  // Discreet badge — no identifiable ID, low z-index
   let badgeEl = null;
   function showBadge(text, color) {
     if (!badgeEl) {
