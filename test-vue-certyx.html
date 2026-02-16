@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Test QCM — Vue 3 + DaisyUI (Certyx-like)</title>
+  <!-- Tailwind + DaisyUI via CDN -->
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@5.0.12/daisyui.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <!-- Vue 3 CDN -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <!-- Inertia-like data-page attribute for framework detection -->
+</head>
+<body class="bg-base-200 min-h-screen" data-page='{"component":"Exam/Show","props":{}}'>
+
+<div id="app" class="max-w-5xl mx-auto p-6">
+
+  <!-- Header -->
+  <div class="navbar bg-base-100 rounded-box shadow mb-6">
+    <div class="flex-1">
+      <span class="text-xl font-bold text-primary">Certyx</span>
+      <span class="badge badge-outline ml-2">Examen Simulé</span>
+    </div>
+    <div class="flex-none gap-2">
+      <div class="badge badge-info">{{ timer }}</div>
+      <div class="badge" :class="submitted ? 'badge-success' : 'badge-warning'">
+        {{ submitted ? 'Soumis' : 'En cours' }}
+      </div>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+    <!-- Questions panel -->
+    <div class="lg:col-span-2 space-y-4">
+
+      <div v-for="(q, qi) in questions" :key="qi"
+           class="card bg-base-100 shadow-lg">
+        <div class="card-body">
+
+          <!-- Question title -->
+          <h2 class="card-title text-sm">
+            <span class="badge badge-primary badge-sm">Q{{ qi + 1 }}</span>
+            <span v-html="q.text"></span>
+          </h2>
+
+          <!-- Radio options (single choice) -->
+          <div v-if="q.type === 'radio'" class="form-control mt-3">
+            <label v-for="(opt, oi) in q.options" :key="oi"
+                   class="label cursor-pointer justify-start gap-3 p-3 rounded-lg hover:bg-base-200 transition"
+                   :class="{ 'bg-primary/10 border border-primary': answers[qi] === oi }">
+              <input type="radio"
+                     :name="'question_' + qi"
+                     :value="oi"
+                     v-model="answers[qi]"
+                     class="radio radio-primary radio-sm">
+              <span class="label-text">{{ opt }}</span>
+            </label>
+          </div>
+
+          <!-- Checkbox options (multiple choice) -->
+          <div v-if="q.type === 'checkbox'" class="form-control mt-3">
+            <label v-for="(opt, oi) in q.options" :key="oi"
+                   class="label cursor-pointer justify-start gap-3 p-3 rounded-lg hover:bg-base-200 transition"
+                   :class="{ 'bg-primary/10 border border-primary': answers[qi]?.includes(oi) }">
+              <input type="checkbox"
+                     :value="oi"
+                     v-model="answers[qi]"
+                     class="checkbox checkbox-primary checkbox-sm">
+              <span class="label-text">{{ opt }}</span>
+            </label>
+          </div>
+
+          <!-- Click-based options (button style, no input) -->
+          <div v-if="q.type === 'click'" class="flex flex-col gap-2 mt-3">
+            <button v-for="(opt, oi) in q.options" :key="oi"
+                    class="btn btn-outline btn-sm justify-start"
+                    :class="{ 'btn-primary': answers[qi] === oi }"
+                    @click="answers[qi] = oi">
+              <span class="badge badge-ghost badge-sm mr-2">{{ String.fromCharCode(65 + oi) }}</span>
+              {{ opt }}
+            </button>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Submit -->
+      <div class="flex gap-3">
+        <button class="btn btn-primary" @click="submit" :disabled="submitted">
+          Soumettre l'examen
+        </button>
+        <button class="btn btn-outline" @click="loadNewQuestions">
+          Recharger les questions
+        </button>
+      </div>
+    </div>
+
+    <!-- Monitoring panel (anti-cheat log) -->
+    <div class="space-y-4">
+
+      <!-- Score card -->
+      <div class="card bg-base-100 shadow-lg">
+        <div class="card-body">
+          <h3 class="card-title text-sm">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-error" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clip-rule="evenodd" />
+            </svg>
+            Anti-Triche Monitor
+          </h3>
+
+          <div class="stats stats-vertical shadow bg-base-200 w-full">
+            <div class="stat">
+              <div class="stat-title">Score de confiance</div>
+              <div class="stat-value text-2xl" :class="scoreColor">{{ score }}%</div>
+            </div>
+            <div class="stat">
+              <div class="stat-title">Alertes</div>
+              <div class="stat-value text-lg text-error">{{ alerts.length }}</div>
+            </div>
+            <div class="stat">
+              <div class="stat-title">Mouse moves</div>
+              <div class="stat-value text-lg">{{ mouseCount }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Vue reactive state (proves v-model works) -->
+      <div class="card bg-base-100 shadow-lg">
+        <div class="card-body">
+          <h3 class="card-title text-sm text-info">Vue State (réactif)</h3>
+          <div class="text-xs font-mono bg-base-200 p-3 rounded-lg max-h-40 overflow-y-auto">
+            <div v-for="(a, i) in answers" :key="i" class="mb-1">
+              <span class="text-primary">Q{{ i + 1 }}:</span>
+              <span v-if="a !== null && a !== undefined" class="text-success">
+                {{ Array.isArray(a) ? a.map(x => String.fromCharCode(65 + x)).join(', ') : String.fromCharCode(65 + a) }}
+              </span>
+              <span v-else class="text-base-content/30">—</span>
+            </div>
+          </div>
+          <p class="text-xs text-base-content/50 mt-2">
+            Si l'extension fonctionne, les valeurs ci-dessus changent quand les réponses sont sélectionnées.
+          </p>
+        </div>
+      </div>
+
+      <!-- Alert log -->
+      <div class="card bg-base-100 shadow-lg">
+        <div class="card-body">
+          <h3 class="card-title text-sm text-warning">Journal des alertes</h3>
+          <div class="space-y-1 max-h-60 overflow-y-auto">
+            <div v-for="(alert, i) in alerts.slice().reverse()" :key="i"
+                 class="text-xs p-2 rounded"
+                 :class="{
+                   'bg-error/10 text-error': alert.level === 'danger',
+                   'bg-warning/10 text-warning': alert.level === 'warn',
+                   'bg-info/10 text-info': alert.level === 'info',
+                   'bg-success/10 text-success': alert.level === 'ok'
+                 }">
+              <span class="font-mono">{{ alert.time }}</span> {{ alert.msg }}
+            </div>
+            <div v-if="alerts.length === 0" class="text-base-content/30 text-xs">
+              Aucune alerte
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+const { createApp, ref, reactive, computed, onMounted, onUnmounted, watch } = Vue;
+
+const BANK = [
+  { text: "Quel est le résultat de <code class='badge badge-ghost badge-sm'>typeof null</code> en JavaScript ?", type: "radio", options: ['"null"', '"object"', '"undefined"', '"boolean"'], correct: 1 },
+  { text: "Quelle méthode HTTP est idempotente ?", type: "radio", options: ["POST", "PATCH", "PUT", "CONNECT"], correct: 2 },
+  { text: "Complexité de <code class='badge badge-ghost badge-sm'>dict.get(key)</code> en Python ?", type: "radio", options: ["O(n)", "O(log n)", "O(1)", "O(n log n)"], correct: 2 },
+  { text: "Quel protocole opère à la couche Transport (couche 4) du modèle OSI ?", type: "radio", options: ["HTTP", "IP", "TCP", "Ethernet"], correct: 2 },
+  { text: "Port par défaut de HTTPS ?", type: "radio", options: ["80", "8080", "443", "3000"], correct: 2 },
+  { text: "Quel hook React remplace componentDidMount ?", type: "radio", options: ["useState", "useEffect", "useRef", "useMemo"], correct: 1 },
+  { text: "Quelle structure de données utilise LIFO ?", type: "radio", options: ["Queue", "Stack", "Array", "Linked List"], correct: 1 },
+  { text: "Code HTTP pour 'Not Found' ?", type: "radio", options: ["401", "403", "404", "500"], correct: 2 },
+  { text: "Quelles sont des bases de données NoSQL ? (plusieurs réponses)", type: "checkbox", options: ["PostgreSQL", "MongoDB", "Redis", "MySQL"], correct: [1, 2] },
+  { text: "Quels sont des frameworks CSS ? (plusieurs réponses)", type: "checkbox", options: ["Tailwind", "Express", "Bootstrap", "Django"], correct: [0, 2] },
+  { text: "Quelle commande Git annule le dernier commit en gardant les modifications ?", type: "click", options: ["git revert HEAD", "git reset --soft HEAD~1", "git checkout HEAD~1", "git stash"], correct: 1 },
+  { text: "Quel est le mot-clé pour déclarer une constante en JavaScript ?", type: "click", options: ["var", "let", "const", "define"], correct: 2 },
+];
+
+createApp({
+  setup() {
+    const questions = ref([]);
+    const answers = reactive({});
+    const alerts = reactive([]);
+    const submitted = ref(false);
+    const mouseCount = ref(0);
+    const clickCount = ref(0);
+    const untrustedClicks = ref(0);
+    const noHoverClicks = ref(0);
+    const focusLost = ref(0);
+    const startTime = ref(Date.now());
+    const hoveredEls = reactive(new Set());
+    let timerInterval = null;
+    const timer = ref("00:00");
+
+    // ---- Load questions ----
+    function loadNewQuestions() {
+      const shuffled = [...BANK].sort(() => Math.random() - 0.5).slice(0, 5);
+      questions.value = shuffled;
+      // Reset answers
+      Object.keys(answers).forEach(k => delete answers[k]);
+      shuffled.forEach((q, i) => {
+        answers[i] = q.type === "checkbox" ? [] : null;
+      });
+      submitted.value = false;
+      startTime.value = Date.now();
+      log("info", "Nouvelles questions chargées (×5)");
+    }
+
+    // ---- Anti-cheat monitoring ----
+    function log(level, msg) {
+      const t = new Date().toLocaleTimeString("fr-FR");
+      alerts.push({ level, msg, time: t });
+    }
+
+    const score = computed(() => {
+      let s = 100;
+      s -= untrustedClicks.value * 20;
+      s -= noHoverClicks.value * 15;
+      s -= focusLost.value * 5;
+      if (clickCount.value > 0 && mouseCount.value === 0) s -= 30;
+      return Math.max(0, Math.min(100, s));
+    });
+
+    const scoreColor = computed(() => {
+      if (score.value >= 70) return "text-success";
+      if (score.value >= 40) return "text-warning";
+      return "text-error";
+    });
+
+    // Mouse move counter
+    function onMouseMove() { mouseCount.value++; }
+
+    // Click monitoring
+    function onClick(e) {
+      clickCount.value++;
+      if (!e.isTrusted) {
+        untrustedClicks.value++;
+        log("danger", `Clic NON-TRUSTED sur <${e.target.tagName}>`);
+      }
+      if (e.screenX === 0 && e.screenY === 0 && e.clientX === 0 && e.clientY === 0) {
+        log("danger", "Clic coordonnées (0,0) — programmatique");
+      }
+    }
+
+    // Focus monitoring
+    function onBlur() {
+      focusLost.value++;
+      log("warn", `Fenêtre perdue (focus lost) — total: ${focusLost.value}`);
+    }
+
+    // Visibility
+    function onVisibility() {
+      if (document.hidden) log("warn", "Onglet masqué (tab switch)");
+    }
+
+    // Copy
+    function onCopy() { log("warn", "Tentative de copie détectée"); }
+
+    // Paste
+    function onPaste() { log("danger", "Tentative de collage détectée"); }
+
+    // Watch answers for changes (proves Vue reactivity works)
+    watch(answers, (newVal) => {
+      const answered = Object.values(newVal).filter(v =>
+        v !== null && v !== undefined && !(Array.isArray(v) && v.length === 0)
+      ).length;
+      if (answered > 0) {
+        log("ok", `Réponse enregistrée — ${answered}/${questions.value.length} répondues`);
+      }
+    }, { deep: true });
+
+    // Timer
+    function updateTimer() {
+      const elapsed = Math.floor((Date.now() - startTime.value) / 1000);
+      const m = String(Math.floor(elapsed / 60)).padStart(2, "0");
+      const s = String(elapsed % 60).padStart(2, "0");
+      timer.value = `${m}:${s}`;
+    }
+
+    function submit() {
+      submitted.value = true;
+      let correct = 0;
+      questions.value.forEach((q, i) => {
+        const a = answers[i];
+        if (q.type === "checkbox") {
+          const sorted = [...(a || [])].sort().join(",");
+          const expected = [...q.correct].sort().join(",");
+          if (sorted === expected) correct++;
+        } else {
+          if (a === q.correct) correct++;
+        }
+      });
+      log("info", `Examen soumis — Score: ${correct}/${questions.value.length}`);
+    }
+
+    onMounted(() => {
+      loadNewQuestions();
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("click", onClick, true);
+      window.addEventListener("blur", onBlur);
+      document.addEventListener("visibilitychange", onVisibility);
+      document.addEventListener("copy", onCopy);
+      document.addEventListener("paste", onPaste);
+      timerInterval = setInterval(updateTimer, 1000);
+      log("info", "Anti-triche Vue.js initialisé");
+    });
+
+    onUnmounted(() => {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("click", onClick, true);
+      window.removeEventListener("blur", onBlur);
+      document.removeEventListener("visibilitychange", onVisibility);
+      document.removeEventListener("copy", onCopy);
+      document.removeEventListener("paste", onPaste);
+      clearInterval(timerInterval);
+    });
+
+    return {
+      questions, answers, alerts, submitted, score, scoreColor,
+      mouseCount, timer, loadNewQuestions, submit
+    };
+  }
+}).mount("#app");
+</script>
+</body>
+</html>
