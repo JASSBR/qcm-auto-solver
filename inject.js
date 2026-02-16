@@ -6,8 +6,21 @@
   const origAdd = EventTarget.prototype.addEventListener;
   const origRemove = EventTarget.prototype.removeEventListener;
 
+  // Only spoof isTrusted for event types anti-cheat monitors check
+  const SPOOF_TYPES = new Set([
+    "click", "mousedown", "mouseup", "mousemove", "mouseover", "mouseenter",
+    "mouseleave", "mouseout", "pointerdown", "pointerup", "pointermove",
+    "change", "input", "keydown", "keyup", "keypress", "focus", "blur",
+    "touchstart", "touchend", "touchmove",
+  ]);
+
   EventTarget.prototype.addEventListener = function (type, callback, options) {
     if (typeof callback !== "function") {
+      return origAdd.call(this, type, callback, options);
+    }
+
+    // Don't wrap events that other extensions (MetaMask, etc.) rely on
+    if (!SPOOF_TYPES.has(type)) {
       return origAdd.call(this, type, callback, options);
     }
 
