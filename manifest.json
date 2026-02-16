@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "QCM Auto Solver",
+  "version": "1.1",
+  "description": "Détecte et répond automatiquement aux questions QCM sur la page courante.",
+  "permissions": ["storage", "activeTab"],
+  "host_permissions": ["https://api.anthropic.com/*", "https://api.openai.com/*"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "48": "icons/icon48.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["inject.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "48": "icons/icon48.png",
+    "128": "icons/icon48.png"
+  }
+}

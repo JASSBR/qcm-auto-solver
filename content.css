@@ -1,0 +1,19 @@
+/* Minimal styles for QCM Solver highlights */
+.qcm-solver-badge {
+  display: inline;
+  animation: qcm-fade-in 0.3s ease;
+}
+
+@keyframes qcm-fade-in {
+  from { opacity: 0; transform: scale(0.8); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+#qcm-solver-status {
+  animation: qcm-slide-in 0.3s ease;
+}
+
+@keyframes qcm-slide-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}

@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QCM Anti-Triche — Test</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f0f1a;
+      color: #e0e0e0;
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: 20px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      text-align: center;
+      color: #00d4ff;
+      margin-bottom: 8px;
+      font-size: 22px;
+      grid-column: 1 / -1;
+    }
+    .subtitle {
+      text-align: center;
+      color: #666;
+      font-size: 13px;
+      margin-bottom: 20px;
+      grid-column: 1 / -1;
+    }
+
+    /* --- Quiz panel --- */
+    .quiz-panel { display: flex; flex-direction: column; gap: 16px; }
+
+    .question {
+      background: #1a1a2e;
+      border: 1px solid #2a2a4a;
+      border-radius: 12px;
+      padding: 20px;
+      transition: border-color 0.3s;
+    }
+    .question.answered { border-color: #4ade80; }
+    .question-title {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 14px;
+      line-height: 1.5;
+    }
+    .question-title span { color: #00d4ff; }
+
+    .options { display: flex; flex-direction: column; gap: 8px; }
+    .option {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      background: #16213e;
+      border: 1px solid #2a2a4a;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+      user-select: none;
+    }
+    .option:hover { border-color: #00d4ff; background: #1a2744; }
+    .option input { accent-color: #00d4ff; cursor: pointer; }
+    .option label { cursor: pointer; flex: 1; font-size: 14px; }
+
+    /* --- Controls --- */
+    .controls {
+      grid-column: 1 / -1;
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .btn {
+      padding: 10px 24px;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-primary { background: #00d4ff; color: #0f0f1a; }
+    .btn-primary:hover { background: #00b8d9; }
+    .btn-danger { background: #f87171; color: #fff; }
+    .btn-danger:hover { background: #ef4444; }
+    .btn-secondary { background: #333; color: #e0e0e0; }
+    .btn-secondary:hover { background: #444; }
+
+    /* --- Anti-cheat log panel --- */
+    .log-panel {
+      background: #1a1a2e;
+      border: 1px solid #2a2a4a;
+      border-radius: 12px;
+      padding: 16px;
+      position: sticky;
+      top: 20px;
+      max-height: calc(100vh - 40px);
+      display: flex;
+      flex-direction: column;
+    }
+    .log-panel h2 {
+      font-size: 14px;
+      color: #f87171;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .log-panel h2::before { content: "🛡️"; }
+
+    .stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+    .stat {
+      background: #16213e;
+      border-radius: 8px;
+      padding: 8px 10px;
+      text-align: center;
+    }
+    .stat .value {
+      font-size: 20px;
+      font-weight: 700;
+      color: #f87171;
+    }
+    .stat .label {
+      font-size: 10px;
+      color: #888;
+      text-transform: uppercase;
+      margin-top: 2px;
+    }
+    .stat.clean .value { color: #4ade80; }
+
+    .log-entries {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-height: 0;
+    }
+    .log-entry {
+      font-size: 11px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      padding: 6px 8px;
+      border-radius: 6px;
+      animation: log-in 0.2s ease;
+      line-height: 1.4;
+    }
+    .log-entry.warn { background: #3d2a0a; color: #fbbf24; }
+    .log-entry.danger { background: #3d0a0a; color: #f87171; }
+    .log-entry.info { background: #0a2a3d; color: #00d4ff; }
+    .log-entry.ok { background: #0a3d1a; color: #4ade80; }
+
+    @keyframes log-in {
+      from { opacity: 0; transform: translateX(10px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+
+    .verdict {
+      margin-top: 12px;
+      padding: 12px;
+      border-radius: 8px;
+      text-align: center;
+      font-weight: 700;
+      font-size: 13px;
+    }
+    .verdict.human { background: #0a3d1a; color: #4ade80; border: 1px solid #4ade80; }
+    .verdict.bot { background: #3d0a0a; color: #f87171; border: 1px solid #f87171; }
+    .verdict.suspect { background: #3d2a0a; color: #fbbf24; border: 1px solid #fbbf24; }
+
+    @media (max-width: 800px) {
+      .layout { grid-template-columns: 1fr; }
+      .log-panel { position: static; max-height: 400px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="layout">
+  <h1>QCM Anti-Triche — Banc de Test</h1>
+  <p class="subtitle">Cette page détecte les comportements suspects. Utilisez-la pour tester votre extension.</p>
+
+  <div class="quiz-panel" id="quiz"></div>
+
+  <div class="log-panel">
+    <h2>Détections Anti-Triche</h2>
+    <div class="stats">
+      <div class="stat" id="stat-alerts">
+        <div class="value">0</div>
+        <div class="label">Alertes</div>
+      </div>
+      <div class="stat clean" id="stat-score">
+        <div class="value">—</div>
+        <div class="label">Score Confiance</div>
+      </div>
+      <div class="stat" id="stat-mouse">
+        <div class="value">0</div>
+        <div class="label">Mvts Souris</div>
+      </div>
+      <div class="stat" id="stat-clicks">
+        <div class="value">0</div>
+        <div class="label">Clics</div>
+      </div>
+    </div>
+    <div class="log-entries" id="log"></div>
+    <div class="verdict" id="verdict" style="display:none"></div>
+  </div>
+
+  <div class="controls">
+    <button class="btn btn-primary" onclick="loadNewQuestions()">Charger nouvelles questions</button>
+    <button class="btn btn-secondary" onclick="resetDetection()">Reset détection</button>
+    <button class="btn btn-danger" onclick="showVerdict()">Verdict final</button>
+  </div>
+</div>
+
+<script>
+// ===================== QUESTIONS BANK =====================
+const QUESTIONS_BANK = [
+  {
+    q: "Quel est le résultat de <code>typeof null</code> en JavaScript ?",
+    opts: ["\"null\"", "\"object\"", "\"undefined\"", "\"boolean\""],
+    answer: 1
+  },
+  {
+    q: "Quelle méthode HTTP est idempotente ?",
+    opts: ["POST", "PATCH", "PUT", "CONNECT"],
+    answer: 2
+  },
+  {
+    q: "En Python, quelle est la complexité de <code>dict.get(key)</code> ?",
+    opts: ["O(n)", "O(log n)", "O(1)", "O(n log n)"],
+    answer: 2
+  },
+  {
+    q: "Quel protocole opère à la couche 4 (Transport) du modèle OSI ?",
+    opts: ["HTTP", "IP", "TCP", "Ethernet"],
+    answer: 2
+  },
+  {
+    q: "En CSS, quelle propriété crée un nouveau contexte d'empilement (stacking context) ?",
+    opts: ["display: block", "position: relative", "opacity: 0.99", "margin: auto"],
+    answer: 2
+  },
+  {
+    q: "Quelle commande Git annule le dernier commit tout en gardant les modifications ?",
+    opts: ["git revert HEAD", "git reset --soft HEAD~1", "git checkout HEAD~1", "git stash"],
+    answer: 1
+  },
+  {
+    q: "En SQL, quelle clause est évaluée AVANT <code>SELECT</code> ?",
+    opts: ["ORDER BY", "LIMIT", "WHERE", "HAVING"],
+    answer: 2
+  },
+  {
+    q: "Quel est le port par défaut de HTTPS ?",
+    opts: ["80", "8080", "443", "3000"],
+    answer: 2
+  },
+  {
+    q: "En React, quel hook remplace <code>componentDidMount</code> ?",
+    opts: ["useState", "useEffect", "useRef", "useMemo"],
+    answer: 1
+  },
+  {
+    q: "Quelle structure de données utilise le principe LIFO ?",
+    opts: ["Queue", "Stack", "Array", "Linked List"],
+    answer: 1
+  },
+  {
+    q: "Quel est le code HTTP pour \"Not Found\" ?",
+    opts: ["401", "403", "404", "500"],
+    answer: 2
+  },
+  {
+    q: "En Docker, quelle commande affiche les conteneurs en cours d'exécution ?",
+    opts: ["docker images", "docker ps", "docker run", "docker logs"],
+    answer: 1
+  }
+];
+
+// ===================== STATE =====================
+let alerts = [];
+let mousePositions = [];
+let mouseMoveCount = 0;
+let clickCount = 0;
+let clickTimestamps = [];
+let lastClickTime = 0;
+let focusLostCount = 0;
+let copyAttempts = 0;
+let rightClickAttempts = 0;
+let domMutationCount = 0;
+let keyPressCount = 0;
+let suspiciousKeys = 0;
+let isTrustedClicks = 0;
+let untrustedClicks = 0;
+let answeredWithoutHover = 0;
+let currentQuestions = [];
+let hoveredOptions = new Set();
+let selectionStartTime = Date.now();
+let answerTimes = [];
+let ignoreMutations = false;
+
+// ===================== QUIZ RENDERING =====================
+function loadNewQuestions() {
+  const shuffled = [...QUESTIONS_BANK].sort(() => Math.random() - 0.5);
+  currentQuestions = shuffled.slice(0, 5);
+  hoveredOptions.clear();
+  selectionStartTime = Date.now();
+  answerTimes = [];
+  renderQuiz();
+  logEvent("info", "📝 Nouvelles questions chargées (×5)");
+}
+
+function renderQuiz() {
+  const quiz = document.getElementById("quiz");
+  quiz.innerHTML = currentQuestions.map((q, qi) => `
+    <div class="question" id="question-${qi}" data-question="${qi}">
+      <div class="question-title"><span>Q${qi + 1}.</span> ${q.q}</div>
+      <div class="options">
+        ${q.opts.map((opt, oi) => `
+          <div class="option" data-q="${qi}" data-o="${oi}"
+               onmouseenter="trackHover(${qi}, ${oi})">
+            <input type="radio" name="q${qi}" id="q${qi}_o${oi}" value="${oi}">
+            <label for="q${qi}_o${oi}">${opt}</label>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+  `).join("");
+
+  // Listen for changes
+  quiz.querySelectorAll("input[type=radio]").forEach(input => {
+    input.addEventListener("change", (e) => onAnswer(e));
+  });
+}
+
+function trackHover(qi, oi) {
+  hoveredOptions.add(`${qi}-${oi}`);
+}
+
+function onAnswer(e) {
+  const qi = parseInt(e.target.name.replace("q", ""));
+  const oi = parseInt(e.target.value);
+  const now = Date.now();
+  const elapsed = now - selectionStartTime;
+
+  answerTimes.push(elapsed);
+  selectionStartTime = now;
+
+  // Mark answered
+  document.getElementById(`question-${qi}`).classList.add("answered");
+
+  // Check: did mouse hover over this option before clicking?
+  if (!hoveredOptions.has(`${qi}-${oi}`)) {
+    answeredWithoutHover++;
+    logEvent("danger", `🎯 Q${qi+1}: Option sélectionnée SANS survol souris`);
+  }
+
+  // Check: isTrusted
+  // (already tracked globally)
+
+  // Check: suspiciously fast answer
+  if (elapsed < 800) {
+    logEvent("warn", `⚡ Q${qi+1}: Réponse ultra-rapide (${elapsed}ms)`);
+  } else if (elapsed < 2000) {
+    logEvent("info", `⏱️ Q${qi+1}: Réponse rapide (${elapsed}ms)`);
+  } else {
+    logEvent("ok", `✅ Q${qi+1}: Réponse en ${(elapsed/1000).toFixed(1)}s`);
+  }
+
+  updateStats();
+}
+
+// ===================== ANTI-CHEAT DETECTORS =====================
+
+// 1. Mouse movement tracking
+document.addEventListener("mousemove", (e) => {
+  mouseMoveCount++;
+  mousePositions.push({ x: e.clientX, y: e.clientY, t: Date.now() });
+
+  // Keep only last 200 positions
+  if (mousePositions.length > 200) mousePositions.shift();
+
+  updateStats();
+});
+
+// 2. Click tracking — isTrusted check
+document.addEventListener("click", (e) => {
+  clickCount++;
+  const now = Date.now();
+  clickTimestamps.push(now);
+
+  if (!e.isTrusted) {
+    untrustedClicks++;
+    logEvent("danger", `🤖 Clic NON-TRUSTED détecté (programmatique) sur <${e.target.tagName}>`);
+  } else {
+    isTrustedClicks++;
+  }
+
+  // Check for robotic click intervals (suspiciously regular)
+  if (clickTimestamps.length >= 3) {
+    const last3 = clickTimestamps.slice(-3);
+    const d1 = last3[1] - last3[0];
+    const d2 = last3[2] - last3[1];
+    if (Math.abs(d1 - d2) < 30 && d1 < 500) {
+      logEvent("warn", `🤖 Clics à intervalles réguliers détectés (${d1}ms, ${d2}ms)`);
+    }
+  }
+
+  // Check for click without recent mouse movement
+  if (mouseMoveCount === 0) {
+    logEvent("danger", "🖱️ Clic détecté sans AUCUN mouvement de souris");
+  }
+
+  lastClickTime = now;
+  updateStats();
+}, true);
+
+// 3. Focus / Blur detection
+window.addEventListener("blur", () => {
+  focusLostCount++;
+  logEvent("warn", `👁️ Fenêtre perdue (focus lost) — total: ${focusLostCount}`);
+  updateStats();
+});
+
+window.addEventListener("focus", () => {
+  logEvent("info", "👁️ Fenêtre retrouvée (focus regained)");
+});
+
+// 4. Visibility change (tab switch)
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    logEvent("warn", "🔀 Onglet masqué (tab switch)");
+  } else {
+    logEvent("info", "🔀 Onglet visible à nouveau");
+  }
+});
+
+// 5. Copy / Cut / Paste
+document.addEventListener("copy", (e) => {
+  copyAttempts++;
+  logEvent("warn", `📋 Tentative de COPIE détectée (×${copyAttempts})`);
+  updateStats();
+});
+document.addEventListener("cut", () => {
+  logEvent("warn", "✂️ Tentative de COUPER détectée");
+});
+document.addEventListener("paste", () => {
+  logEvent("danger", "📋 Tentative de COLLER détectée!");
+  updateStats();
+});
+
+// 6. Right click
+document.addEventListener("contextmenu", (e) => {
+  rightClickAttempts++;
+  logEvent("warn", `🖱️ Clic droit détecté (×${rightClickAttempts})`);
+  updateStats();
+});
+
+// 7. Keyboard shortcuts (dev tools, etc.)
+document.addEventListener("keydown", (e) => {
+  keyPressCount++;
+
+  // Detect DevTools shortcuts
+  if (e.key === "F12") {
+    logEvent("danger", "🔧 Touche F12 (DevTools) détectée");
+    suspiciousKeys++;
+  }
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === "I" || e.key === "i")) {
+    logEvent("danger", "🔧 Ctrl+Shift+I (Inspecteur) détecté");
+    suspiciousKeys++;
+  }
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === "J" || e.key === "j")) {
+    logEvent("danger", "🔧 Ctrl+Shift+J (Console) détecté");
+    suspiciousKeys++;
+  }
+  if ((e.ctrlKey || e.metaKey) && (e.key === "u" || e.key === "U")) {
+    logEvent("warn", "🔧 Ctrl+U (View Source) détecté");
+    suspiciousKeys++;
+  }
+
+  updateStats();
+});
+
+// 8. DOM Mutation detection (extensions injecting elements)
+const domObserver = new MutationObserver((mutations) => {
+  if (ignoreMutations) return;
+
+  const pending = [];
+
+  for (const m of mutations) {
+    // Skip mutations inside our own log panel
+    const logPanel = document.getElementById("log");
+    if (logPanel && (logPanel.contains(m.target) || m.target === logPanel)) continue;
+
+    for (const node of m.addedNodes) {
+      if (node.nodeType !== Node.ELEMENT_NODE) continue;
+      if (logPanel && logPanel.contains(node)) continue;
+
+      // Detect injected scripts
+      if (node.tagName === "SCRIPT") {
+        pending.push(["danger", `💉 Script injecté dans le DOM: ${node.src || "(inline)"}`]);
+      }
+
+      // Detect extension badges / overlays
+      if (node.id && node.id.includes("qcm-solver")) {
+        pending.push(["danger", "💉 Élément QCM Solver détecté dans le DOM!"]);
+      }
+
+      // Detect any element with very high z-index (overlays)
+      try {
+        const style = window.getComputedStyle(node);
+        if (parseInt(style.zIndex) > 99999) {
+          pending.push(["warn", `💉 Élément avec z-index élevé injecté: <${node.tagName}> z=${style.zIndex}`]);
+        }
+      } catch(e) {}
+
+      domMutationCount++;
+    }
+
+    // Detect attribute changes on radio/checkbox (value forced)
+    if (m.type === "attributes" && m.target.matches?.('input[type="radio"], input[type="checkbox"]')) {
+      if (m.attributeName === "checked" || m.attributeName === "value") {
+        pending.push(["danger", `⚡ Attribut "${m.attributeName}" modifié directement sur ${m.target.id || m.target.name}`]);
+      }
+    }
+  }
+
+  // Flush pending logs with mutations paused to avoid infinite loop
+  if (pending.length > 0) {
+    ignoreMutations = true;
+    pending.forEach(([lvl, msg]) => logEvent(lvl, msg));
+    updateStats();
+    ignoreMutations = false;
+  }
+});
+
+domObserver.observe(document.body, {
+  childList: true,
+  subtree: true,
+  attributes: true,
+  attributeFilter: ["checked", "value", "selected"],
+});
+
+// 9. Detect programmatic .click() via event properties
+document.addEventListener("click", (e) => {
+  if (e.target.matches('input[type="radio"], input[type="checkbox"]')) {
+    // Check screenX/screenY — programmatic clicks often have 0,0
+    if (e.screenX === 0 && e.screenY === 0 && e.clientX === 0 && e.clientY === 0) {
+      logEvent("danger", "🤖 Clic programmatique détecté (coordonnées 0,0)");
+    }
+
+    // Check if there was a matching mousedown + mouseup
+    if (!e.isTrusted) {
+      logEvent("danger", `🤖 input.click() programmatique sur ${e.target.id}`);
+    }
+  }
+}, true);
+
+// 10. Detect Event dispatching (dispatchEvent)
+const origDispatch = EventTarget.prototype.dispatchEvent;
+EventTarget.prototype.dispatchEvent = function(event) {
+  if (event.type === "change" || event.type === "click" || event.type === "input") {
+    if (this.matches?.('input[type="radio"], input[type="checkbox"]')) {
+      logEvent("danger", `⚙️ dispatchEvent("${event.type}") intercepté sur ${this.id || this.name}`);
+    }
+  }
+  return origDispatch.call(this, event);
+};
+
+// 11. Monitor mouse movement patterns (detect no mouse = bot)
+setInterval(() => {
+  if (mousePositions.length >= 10) {
+    // Check for perfectly straight lines (robotic movement)
+    const last10 = mousePositions.slice(-10);
+    let allSameY = last10.every(p => p.y === last10[0].y);
+    let allSameX = last10.every(p => p.x === last10[0].x);
+    if (allSameY && !allSameX) {
+      // Perfectly horizontal — suspicious but possible
+    }
+
+    // Check for impossibly fast movement
+    for (let i = 1; i < last10.length; i++) {
+      const dx = last10[i].x - last10[i-1].x;
+      const dy = last10[i].y - last10[i-1].y;
+      const dt = last10[i].t - last10[i-1].t;
+      const speed = Math.sqrt(dx*dx + dy*dy) / Math.max(dt, 1);
+      if (speed > 50) { // pixels per ms — impossibly fast
+        logEvent("warn", `🏎️ Mouvement souris anormalement rapide (${speed.toFixed(0)} px/ms)`);
+        break;
+      }
+    }
+  }
+}, 3000);
+
+// 12. Detect property override on HTMLInputElement.checked
+try {
+  const checkedDesc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'checked');
+  const origSet = checkedDesc.set;
+  Object.defineProperty(HTMLInputElement.prototype, 'checked', {
+    get: checkedDesc.get,
+    set: function(val) {
+      // Check if this is coming from a user action or programmatic
+      if (val === true && this.type === 'radio') {
+        const error = new Error();
+        const stack = error.stack || "";
+        if (stack.includes("content.js") || stack.includes("extension")) {
+          logEvent("danger", `🔓 .checked = true forcé par script externe sur ${this.id}`);
+        }
+      }
+      return origSet.call(this, val);
+    },
+    configurable: true
+  });
+} catch(e) {}
+
+
+// ===================== UI UPDATES =====================
+function logEvent(level, message) {
+  const entry = { level, message, time: new Date() };
+  alerts.push(entry);
+
+  // Pause observer while we touch the DOM
+  const wasIgnoring = ignoreMutations;
+  ignoreMutations = true;
+
+  const log = document.getElementById("log");
+  const div = document.createElement("div");
+  div.className = `log-entry ${level}`;
+  const time = entry.time.toLocaleTimeString("fr-FR");
+  div.innerHTML = `<strong>${time}</strong> ${message}`;
+  log.prepend(div);
+
+  // Keep max 100 entries in DOM
+  while (log.children.length > 100) log.removeChild(log.lastChild);
+
+  ignoreMutations = wasIgnoring;
+  updateStats();
+}
+
+function updateStats() {
+  const dangerCount = alerts.filter(a => a.level === "danger").length;
+  const warnCount = alerts.filter(a => a.level === "warn").length;
+  const totalAlerts = dangerCount + warnCount;
+
+  document.querySelector("#stat-alerts .value").textContent = totalAlerts;
+  document.querySelector("#stat-mouse .value").textContent = mouseMoveCount;
+  document.querySelector("#stat-clicks .value").textContent = clickCount;
+
+  // Confidence score
+  const scoreEl = document.querySelector("#stat-score .value");
+  const statEl = document.getElementById("stat-score");
+  const score = calculateScore();
+  scoreEl.textContent = score + "%";
+
+  statEl.className = "stat";
+  if (score >= 70) statEl.classList.add("clean");
+  else if (score >= 40) { /* neutral */ }
+  else statEl.style.cssText = "background:#3d0a0a;";
+}
+
+function calculateScore() {
+  let score = 100;
+
+  // Untrusted clicks are very suspicious
+  score -= untrustedClicks * 20;
+
+  // Answering without hover
+  score -= answeredWithoutHover * 15;
+
+  // Focus lost
+  score -= focusLostCount * 5;
+
+  // Copy attempts
+  score -= copyAttempts * 5;
+
+  // Suspicious keys
+  score -= suspiciousKeys * 5;
+
+  // Right clicks
+  score -= rightClickAttempts * 3;
+
+  // No mouse movement at all but clicks happened
+  if (clickCount > 0 && mouseMoveCount === 0) score -= 30;
+
+  // Fast answers
+  const fastAnswers = answerTimes.filter(t => t < 1000).length;
+  score -= fastAnswers * 10;
+
+  // DOM mutations from extension
+  const dangerAlerts = alerts.filter(a => a.level === "danger").length;
+  score -= dangerAlerts * 3;
+
+  return Math.max(0, Math.min(100, score));
+}
+
+function showVerdict() {
+  const score = calculateScore();
+  const el = document.getElementById("verdict");
+  el.style.display = "block";
+
+  if (score >= 70) {
+    el.className = "verdict human";
+    el.textContent = `✅ Humain (${score}%) — Comportement normal détecté`;
+  } else if (score >= 40) {
+    el.className = "verdict suspect";
+    el.textContent = `⚠️ Suspect (${score}%) — Comportement partiellement anormal`;
+  } else {
+    el.className = "verdict bot";
+    el.textContent = `🤖 Bot détecté (${score}%) — Comportement automatisé évident`;
+  }
+}
+
+function resetDetection() {
+  alerts = [];
+  mousePositions = [];
+  mouseMoveCount = 0;
+  clickCount = 0;
+  clickTimestamps = [];
+  focusLostCount = 0;
+  copyAttempts = 0;
+  rightClickAttempts = 0;
+  domMutationCount = 0;
+  keyPressCount = 0;
+  suspiciousKeys = 0;
+  isTrustedClicks = 0;
+  untrustedClicks = 0;
+  answeredWithoutHover = 0;
+  answerTimes = [];
+
+  document.getElementById("log").innerHTML = "";
+  document.getElementById("verdict").style.display = "none";
+  updateStats();
+  logEvent("info", "🔄 Détection réinitialisée");
+}
+
+// ===================== INIT =====================
+logEvent("info", "🚀 Système anti-triche initialisé");
+logEvent("info", "👀 Surveillance: souris, clics, focus, DOM, clavier, copie...");
+loadNewQuestions();
+</script>
+</body>
+</html>
